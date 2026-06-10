@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
 Classify each newline-separated segment of each document into one of the
-8 CORE main registers, using +-5 surrounding segments as context.
+8 CORE main registers, using surrounding segments as context.
 
-Built for very large inputs (millions of docs):
+Each generation call labels a small CORE of segments (CORE of them) while
+showing RADIUS extra segments on each side as context-only. The cores tile
+every document with no gaps and no overlap, so every segment is labeled
+exactly once and the output is always N labels for N segments.
+
+Built for very large inputs (millions of docs), including docs of any length
+(1 to 10000+ segments):
   - Input is STREAMED, never fully loaded into memory.
   - Output is APPENDED one doc at a time.
   - Re-running the same command RESUMES: docs already in the output are skipped.
@@ -29,7 +35,8 @@ from transformers import AutoTokenizer
 
 MODEL_PATH = "Qwen/Qwen3.6-35B-A3B"
 TP_SIZE = 2
-CONTEXT_RADIUS = 5  # how many segments on each side to show as context
+CORE = 4  # how many segments each call actually labels
+RADIUS = 4  # how many segments on each side to show as context-only
 SEGMENT_CHAR_LIMIT = 500  # first N characters of each segment
 DOC_CHUNK = 200  # how many docs to process per batch; bounds memory
 
@@ -48,12 +55,13 @@ LABELS = list(REGISTERS.keys())
 
 SYSTEM_PROMPT = (
     "You are a text register classifier using the CORE taxonomy. "
-    "You classify a single TARGET segment of a web page into exactly one of "
-    "eight main registers, using the surrounding segments only as context.\n\n"
+    "You classify segments of a web page into the eight main registers, "
+    "using the surrounding segments only as context.\n\n"
     "The eight registers are:\n"
     + "\n".join(f"  {k}: {v}" for k, v in REGISTERS.items())
-    + "\n\nRespond with ONLY the two-letter code of the single best register "
-    "for the TARGET segment. No explanation, no other text."
+    + "\n\nRespond with ONLY the two-letter codes for the segments marked "
+    "'classify', one per segment, comma-separated, in order. "
+    "No explanation, no other text."
 )
 
 
@@ -65,25 +73,32 @@ def split_segments(text):
     return [s.strip() for s in text.split("\n") if s.strip()]
 
 
-def build_prompt(segments, target_idx):
-    """The context window for one target segment: it plus +-CONTEXT_RADIUS neighbours."""
-    lo = max(0, target_idx - CONTEXT_RADIUS)
-    hi = min(len(segments), target_idx + CONTEXT_RADIUS + 1)
+def labels_regex(n):
+    """Grammar that permits exactly n comma-separated register codes."""
+    one = "(" + "|".join(LABELS) + ")"
+    return one + ("," + one) * (n - 1)
 
+
+def build_prompt(segments, core_start, core_len, ctx_lo, ctx_hi):
+    """
+    The context window for one core of segments: the CORE itself plus
+    RADIUS neighbours on each side, shown as context.
+    """
+    core_end = core_start + core_len  # exclusive
     lines = []
-    for i in range(lo, hi):
-        snippet = segments[i][:SEGMENT_CHAR_LIMIT]
-        tag = "TARGET — classify THIS" if i == target_idx else "context"
+    for i in range(ctx_lo, ctx_hi):
+        tag = "classify" if core_start <= i < core_end else "context"
         lines.append(f"[SEGMENT {i}] ({tag})")
-        lines.append(snippet)
+        lines.append(segments[i][:SEGMENT_CHAR_LIMIT])
 
     window = "\n".join(lines)
+    last = core_end - 1
     return (
-        f"Below are segments {lo}-{hi - 1} of a web page. "
-        f"Classify ONLY segment {target_idx} (the TARGET). "
+        f"Below are segments {ctx_lo}-{ctx_hi - 1} of a web page. "
+        f"Classify ONLY segments {core_start}-{last} (marked 'classify'). "
         f"Use the others as context.\n\n"
         f"{window}\n\n"
-        f"Register code for segment {target_idx}:"
+        f"Register codes for segments {core_start}-{last}:"
     )
 
 
@@ -129,18 +144,31 @@ def ids_already_done(output_path):
 # ---- the one slightly-tricky box: classify a batch of docs ----------------
 
 
-def classify_chunk(engine, tok, sampling_params, chunk):
+def classify_chunk(engine, tok, chunk):
     """
     Classify every segment of every doc in `chunk`.
     Returns one list of register codes per doc, in the same order as `chunk`.
+
+    Cores tile each doc by CORE with no overlap, so every segment is labeled
+    exactly once. Each call also sees RADIUS context segments on each side.
     """
-    # Flatten: one prompt per segment, remembering which (doc, segment) it is.
-    prompts, index = [], []
+    labels = [[None] * len(d["segments"]) for d in chunk]
+
+    # Flatten: one prompt per core, remembering which doc/core it is, plus the
+    # per-prompt sampling params (the regex and length depend on the core size).
+    prompts, index, sps = [], [], []
     for doc_i, d in enumerate(chunk):
-        for seg_i in range(len(d["segments"])):
+        segs = d["segments"]
+        for core_start in range(0, len(segs), CORE):
+            core_len = min(CORE, len(segs) - core_start)
+            ctx_lo = max(0, core_start - RADIUS)
+            ctx_hi = min(len(segs), core_start + core_len + RADIUS)
             chat = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_prompt(d["segments"], seg_i)},
+                {
+                    "role": "user",
+                    "content": build_prompt(segs, core_start, core_len, ctx_lo, ctx_hi),
+                },
             ]
             prompts.append(
                 tok.apply_chat_template(
@@ -150,14 +178,26 @@ def classify_chunk(engine, tok, sampling_params, chunk):
                     enable_thinking=False,
                 )
             )
-            index.append((doc_i, seg_i))
+            index.append((doc_i, core_start, core_len))
+            sps.append(
+                {
+                    "temperature": 0.0,
+                    "max_new_tokens": 3 * core_len + 4,
+                    "regex": labels_regex(core_len),
+                }
+            )
 
-    outputs = engine.generate(prompts, sampling_params)
+    outputs = engine.generate(prompts, sps)
 
-    # Regroup: scatter the flat outputs back into per-doc lists.
-    labels = [[None] * len(d["segments"]) for d in chunk]
-    for (doc_i, seg_i), o in zip(index, outputs):
-        labels[doc_i][seg_i] = o["text"].strip()
+    # Regroup: scatter each core's labels back into its doc's list.
+    for (doc_i, core_start, core_len), o in zip(index, outputs):
+        parts = [p.strip() for p in o["text"].strip().split(",")]
+        assert len(parts) == core_len
+        labels[doc_i][core_start : core_start + core_len] = parts
+
+    # Integrity check: every segment of every doc got exactly one label.
+    for doc_i in range(len(chunk)):
+        assert None not in labels[doc_i]
     return labels
 
 
@@ -181,13 +221,8 @@ def main():
         mem_fraction_static=0.90,
         context_length=8192,
         reasoning_parser="qwen3",
-        max_running_requests=256,
+        max_running_requests=64,
     )
-    sampling_params = {
-        "temperature": 0.0,
-        "max_new_tokens": 4,
-        "regex": "(" + "|".join(LABELS) + ")",
-    }
 
     # Stream input, skip what's done, process the rest in fixed-size chunks.
     todo = (d for d in read_docs(args.input) if d.get("id") not in done)
@@ -196,7 +231,7 @@ def main():
     t0 = time.perf_counter()
     with open(args.output, "a") as out:
         for chunk in chunked(todo, DOC_CHUNK):
-            labels = classify_chunk(engine, tok, sampling_params, chunk)
+            labels = classify_chunk(engine, tok, chunk)
             for d, segment_registers in zip(chunk, labels):
                 out.write(
                     json.dumps(
