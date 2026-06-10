@@ -182,7 +182,7 @@ def main():
         context_length=8192,
         reasoning_parser="qwen3",
         max_running_requests=64,
-        disable_cuda_graph=True,
+        # disable_cuda_graph=True,
     )
     sampling_params = {
         "temperature": 0.0,
