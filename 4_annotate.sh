@@ -19,8 +19,8 @@ module load lumi-aif-singularity-bindings
 
 export PYTHONPATH=$PWD/extra_pkgs:$PYTHONPATH
 
-singularity exec $CONTAINER_IMAGE \
-    python3 -c "import os; print('PYTHONPATH=', os.environ.get('PYTHONPATH')); import transformers; print(transformers.__version__, transformers.__file__)"
-
-singularity exec $CONTAINER_IMAGE \
+singularity exec \
+    --env PYTHONPATH=/extra_pkgs:/opt/venv/lib/python3.12/site-packages \
+    --bind "$PWD/extra_pkgs:/extra_pkgs" \
+    $CONTAINER_IMAGE \
     python3 4_annotate.py --input "$INPUT" --output "$OUTPUT"
