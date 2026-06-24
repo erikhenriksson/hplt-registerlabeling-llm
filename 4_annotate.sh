@@ -19,5 +19,7 @@ module load lumi-aif-singularity-bindings
 
 export PYTHONPATH=$PWD/extra_pkgs:$PYTHONPATH
 
+ls $PWD/extra_pkgs
+
 singularity exec $CONTAINER_IMAGE \
     python3 4_annotate.py --input "$INPUT" --output "$OUTPUT"
