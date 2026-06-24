@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Segment Annotator</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #ffffff; --ink: #1c1c1a; --muted: #6b6b66;
+    --line: #e0e0db; --accent: #2f5d50; --accent-soft: #e4efe9;
+    --target: #fff6da; --target-border: #e6c64a; --danger: #9a3b2f;
+    --sel: #2f5d50; --sel-ink: #ffffff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --dock-h: 176px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans);
+    font-size: 15px; line-height: 1.5; padding-bottom: calc(var(--dock-h) + 16px); }
+
+  header { position: sticky; top: 0; z-index: 20; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: 8px 14px; display: flex;
+    align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; }
+  .grow { flex: 1; }
+  .btn { font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: #f0f0ec; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .pill { font-size: 12px; color: var(--muted); background: var(--accent-soft);
+    padding: 3px 9px; border-radius: 99px; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+
+  .progressbar { height: 3px; background: var(--accent); transition: width 0.2s; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 16px 16px 8px; }
+
+  .docbar { position: sticky; top: 49px; z-index: 15; background: var(--bg);
+    padding: 8px 0 6px; border-bottom: 1px dashed var(--line); margin-bottom: 12px; }
+  .docbar .row { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+  .docbar .k { color: var(--muted); min-width: 76px; flex-shrink: 0; }
+  .docbar .v { word-break: break-word; }
+  .docbar a { color: var(--accent); }
+  .loc { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  details.ctxbox { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  details.ctxbox > summary { cursor: pointer; padding: 8px 12px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  details.ctxbox .inner { padding: 4px 12px 12px; }
+
+  .seg { padding: 7px 11px; border-radius: 7px; margin: 5px 0; white-space: pre-wrap; font-size: 14px;
+    border: 1px solid transparent; }
+  .seg.ctx { color: #3a3a36; background: #fafaf8; border-color: var(--line); }
+  .seg.head { color: #4a4a45; background: #f3f4ef; border-color: var(--line); }
+  .seg .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--muted); display: block; margin-bottom: 3px; }
+
+  .target-card { background: var(--target); border: 2px solid var(--target-border);
+    border-radius: 10px; padding: 14px 16px; margin: 6px 0 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+  .target-card .tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #8a6d12; font-weight: 700; display: block; margin-bottom: 6px; }
+  .target-card .body { font-size: 17px; line-height: 1.55; white-space: pre-wrap; font-weight: 500; }
+
+  .nearctx { margin: 4px 0; }
+  .nearctx .seg { font-size: 13px; opacity: 0.92; }
+
+  .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--panel);
+    border-top: 1px solid var(--line); box-shadow: 0 -3px 14px rgba(0,0,0,0.06); padding: 8px 12px 10px; }
+  .dock-inner { max-width: 980px; margin: 0 auto; }
+  .frow { display: flex; align-items: center; gap: 8px; margin: 4px 0; flex-wrap: wrap; }
+  .frow .flabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); width: 84px; flex-shrink: 0; }
+  .frow.dis { opacity: 0.38; pointer-events: none; }
+  .choice { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; }
+  .choice:hover { background: #f0f0ec; }
+  .choice.sel { background: var(--sel); color: var(--sel-ink); border-color: var(--sel); }
+  .choice.sel2 { background: var(--accent-soft); color: var(--accent); border-color: var(--accent);
+    border-style: dashed; }
+  .choice .rank { font-size: 10px; font-weight: 700; margin-left: 2px;
+    border-radius: 99px; width: 15px; height: 15px; display: inline-flex; align-items: center;
+    justify-content: center; background: rgba(255,255,255,0.85); color: var(--accent); }
+  .choice.sel2 .rank { background: var(--accent); color: #fff; }
+  .secwrap { display: inline-flex; gap: 4px; margin-left: 6px; }
+  .second-toggle { font-size: 12px; padding: 5px 9px; color: var(--muted); }
+  .second-toggle.arm { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .clr2 { font-size: 12px; padding: 5px 9px; line-height: 1; }
+  .frow.arming { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 7px; }
+  .choice .hk { font-family: var(--mono); font-size: 10px; opacity: 0.75;
+    border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+  .choice .ds { font-size: 11px; color: var(--muted); }
+  .choice.sel .ds { color: rgba(255,255,255,0.82); }
+
+  .dockbar { display: flex; align-items: center; gap: 12px; margin-top: 8px;
+    padding-top: 8px; border-top: 1px solid var(--line); }
+  .dockbar .status { font-size: 13px; color: var(--muted); }
+  .saved { color: var(--accent); }
+  .jump { width: 58px; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; }
+
+  .empty { text-align: center; color: var(--muted); padding: 70px 20px; }
+
+  .modal-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(20,20,18,0.42);
+    display: none; align-items: flex-start; justify-content: center; padding: 48px 16px; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--panel); border-radius: 12px; max-width: 720px; width: 100%;
+    max-height: 82vh; overflow: auto; box-shadow: 0 18px 50px rgba(0,0,0,0.25); }
+  .modal-hd { position: sticky; top: 0; background: var(--panel); display: flex; align-items: center;
+    justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .modal pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+    margin: 0; padding: 16px 18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Segment Annotator</h1>
+  <span id="filepill" class="pill" style="display:none"></span>
+  <span class="grow"></span>
+  <button class="btn" id="codebookBtn">Codebook</button>
+  <input id="fileInput" type="file" accept=".jsonl,.json,application/json,text/plain" style="display:none">
+  <button class="btn" id="loadBtn">Load file</button>
+  <button class="btn" id="importBtn">Import</button>
+  <button class="btn primary" id="exportBtn" disabled>Export</button>
+</header>
+<div class="progressbar" id="pbar" style="width:0%"></div>
+
+<div class="wrap" id="wrap">
+  <div class="empty" id="emptyState">
+    <p>Load a sample JSONL file (e.g. <code>eng_Latn_sample_250.jsonl</code>) to begin.</p>
+    <p style="font-size:13px">Autosaves in this browser, keyed by filename — reopen to resume. Export regularly as backup.</p>
+    <button class="btn primary" id="loadBtn2">Choose file</button>
+  </div>
+</div>
+
+<div class="dock" id="dock" style="display:none">
+  <div class="dock-inner" id="dockInner"></div>
+</div>
+
+<input id="importInput" type="file" accept=".jsonl,.json" style="display:none">
+
+<div class="modal-backdrop" id="cbBackdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Codebook">
+    <div class="modal-hd">
+      <strong>Codebook</strong>
+      <button class="btn" id="cbClose">Close</button>
+    </div>
+    <pre id="cbBody"></pre>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const MEDIUM = [
+  ["written", "composed as text", "1"],
+  ["transcribed", "spoken first", "2"],
+  ["cannot_rate", "not self-standing communication", "3"],
+];
+const TURN = [
+  ["monologic", "one author \u2192 audience", "m"],
+  ["dialogic", "others can reply", "d"],
+];
+const PURPOSE = [
+  ["explaining", "how it IS / WORKS", "e"],
+  ["supporting", "evidence for a claim", "s"],
+  ["recounting", "events in sequence", "r"],
+  ["directing", "how to / what to do", "i"],
+  ["evaluating", "argued assessment", "v"],
+  ["expressing", "opinion, no grounds", "x"],
+  ["promoting", "self-marketing", "p"],
+  ["creating", "literary art", "c"],
+];
+const CODEBOOK_TEXT = `mode_medium (always):
+  written \u2014 text composed as text
+  transcribed \u2014 clearly spoken first (speaker labels, transcripts, speeches)
+  cannot_rate \u2014 not a self-standing piece of communication, even if
+                well-formed: titles/headings, navigation, boilerplate, metadata,
+                link/label lists, bare fragments, machine-generated filler, or
+                text too garbled to stand on its own.
+
+mode_turn (skip if cannot_rate):
+  monologic \u2014 one author to a general audience (articles, guides, FAQs)
+  dialogic \u2014 others can reply (forums, comments, social posts, chats, interviews)
+
+field_purpose (skip if cannot_rate):
+  explaining \u2014 how something IS or WORKS; concepts, definitions, mechanisms.
+  supporting \u2014 backing a claim with evidence, reasons, sources, or experience.
+  recounting \u2014 relating specific events in sequence as having happened.
+  directing \u2014 telling the reader how to do something, or what they should do.
+  evaluating \u2014 reasoned assessment or argument where grounds are given.
+  expressing \u2014 personal opinion, emotion, or stance as the point itself.
+  promoting \u2014 the author marketing their own product, service, or organization.
+  creating \u2014 poetry, lyrics, scripture, or literary art as primary content.
+
+Tie-breakers:
+  - evaluating vs expressing: grounds given = evaluating; bare reaction = expressing.
+  - explaining vs supporting: "how/what is X" = explaining; "why believe / evidence" = supporting.
+  - recounting vs explaining: a story of events = recounting; a citation/catalog mention = explaining.
+
+Primary and optional second value:
+  - Pick the value that fits best as the primary. Most segments have one main
+    purpose.
+  - A second value is optional and should stay rare: add one only when the
+    segment truly does two things and tagging just one would misrepresent it.`;
+
+const CHARCAP = 1000;
+const DB_NAME = "segment_annotator", STORE = "progress";
+
+let records = [], fileName = "", idx = 0, ann = {};
+let secondArm = null; // facet name currently armed to receive a secondary pick, or null
+const recordKey = (r) => `${r.source_file}|${r.line_number}|${r.target_index}`;
+
+function openDB(){return new Promise((res,rej)=>{const q=indexedDB.open(DB_NAME,1);
+  q.onupgradeneeded=()=>q.result.createObjectStore(STORE);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});}
+async function dbPut(k,v){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,"readwrite");
+  tx.objectStore(STORE).put(v,k);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);});}
+async function dbGet(k){const db=await openDB();return new Promise((res,rej)=>{const tx=db.transaction(STORE,"readonly");
+  const r=tx.objectStore(STORE).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+
+let saveTimer=null;
+function scheduleSave(){ setSaveStatus("saving\u2026"); clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{ try{ await dbPut(fileName,{idx,ann,savedAt:Date.now()}); setSaveStatus("saved"); }
+    catch(e){ setSaveStatus("save failed \u2014 export!",true); } },180); }
+
+function parseJSONL(t){const o=[];t.split(/\r?\n/).forEach(l=>{l=l.trim();if(!l)return;
+  try{o.push(JSON.parse(l));}catch(e){}});return o;}
+
+const $=(id)=>document.getElementById(id);
+$("loadBtn").onclick=()=>$("fileInput").click();
+$("loadBtn2").onclick=()=>$("fileInput").click();
+$("fileInput").onchange=async(e)=>{const f=e.target.files[0];if(!f)return;
+  records=parseJSONL(await f.text());
+  if(!records.length){alert("No valid JSON lines found.");return;}
+  fileName=f.name; const s=await dbGet(fileName);
+  if(s){ann=s.ann||{};idx=Math.min(s.idx||0,records.length-1);}else{ann={};idx=firstUnannotated();}
+  $("exportBtn").disabled=false; const p=$("filepill"); p.style.display=""; p.textContent=fileName;
+  $("dock").style.display=""; render();};
+
+const esc=(s)=>String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const cap=(s)=>{s=String(s==null?"":s);return s.length>CHARCAP?s.slice(0,CHARCAP)+" \u2026":s;};
+function segHTML(t,cls,label){return `<div class="seg ${cls}"><span class="tag">${label}</span>${esc(cap(t))}</div>`;}
+
+function firstUnannotated(){for(let i=0;i<records.length;i++){if(!isDone(records[i]))return i;}return 0;}
+function isDone(r){const a=ann[recordKey(r)];if(!a)return false;
+  if(a.mode_medium==="cannot_rate")return true;
+  return !!(a.mode_medium&&a.mode_turn&&a.field_purpose);}
+
+function render(){
+  const r=records[idx], a=ann[recordKey(r)]||{}, meta=r.meta||{};
+  const url=meta.u, prop=meta["propella-4b"]||{};
+  const desc=prop.one_sentence_description, ctype=prop.content_type;
+
+  const before=r.context_before||[], after=r.context_after||[];
+  const startIdx=(r.context_start_index!=null)?r.context_start_index:(r.target_index-before.length);
+
+  // doc_head (collapsed) — only the document opening, separate from the window
+  let headHTML="";
+  if(Array.isArray(r.doc_head)&&r.doc_head.length){
+    headHTML=`<details class="ctxbox"><summary>Document start (first ${r.doc_head.length} segments)</summary>
+      <div class="inner">${r.doc_head.map((s,i)=>segHTML(s,"head","head "+i)).join("")}</div></details>`;
+  }
+
+  // in-order window: before \u2192 TARGET \u2192 after, target highlighted and scrolled to
+  let win="";
+  win+=before.map((s,i)=>segHTML(s,"ctx","seg "+(startIdx+i))).join("");
+  win+=`<div class="target-card" id="targetCard">
+      <span class="tag">\u2605 Target segment \u00b7 seg ${r.target_index} (first ${CHARCAP} chars)</span>
+      <div class="body">${esc(cap(r.target_segment))||"<em style='color:var(--muted)'>(empty segment)</em>"}</div>
+    </div>`;
+  win+=after.map((s,i)=>segHTML(s,"ctx","seg "+(r.target_index+1+i))).join("");
+
+  $("wrap").innerHTML=`
+    <div class="docbar">
+      <div class="row"><span class="k">URL</span><span class="v">${url?`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`:"<em>\u2014</em>"}</span></div>
+      <div class="row"><span class="k">Description</span><span class="v">${desc?esc(desc):"<em>\u2014</em>"}</span></div>
+      <div class="row"><span class="k">Content type</span><span class="v">${ctype?esc(ctype):"<em>\u2014</em>"}</span></div>
+      <div class="loc">${esc(r.source_file)} \u00b7 line ${r.line_number} \u00b7 seg ${r.target_index} of ${r.n_segments}</div>
+    </div>
+
+    ${headHTML}
+    <div class="window">${win}</div>
+  `;
+
+  renderDock(a);
+  $("pbar").style.width=(100*(idx+1)/records.length)+"%";
+  // scroll the target into view, leaving the preceding context above it to scroll up into
+  const tc=$("targetCard");
+  if(tc){ tc.scrollIntoView({block:"center"}); }
+}
+
+function choiceBtn(field,val,ds,hk,prim,sec,showRank){
+  const cls = prim ? "sel" : (sec ? "sel2" : "");
+  const badge = showRank ? (prim ? `<span class="rank">1</span>` : (sec ? `<span class="rank">2</span>` : "")) : "";
+  return `<button class="choice ${cls}" data-field="${field}" data-val="${val}">
+    <span class="hk">${hk}</span><span>${val}</span><span class="ds">${esc(ds)}</span>${badge}</button>`;
+}
+function facetRow(field, opts, a, disabled){
+  const prim = a[field], sec = a[field+"_2"];
+  const secMode = (secondArm===field);
+  const canSecond = prim && prim!=="cannot_rate";
+  const showRank = !!sec;  // ranks only matter once a secondary is chosen
+  const btns = opts.map(([v,d,k])=>choiceBtn(field,v,d,k,prim===v,sec===v,showRank)).join("");
+  const flabel = field==="mode_medium"?"medium":field==="mode_turn"?"turn":"purpose";
+  const secBtn = canSecond
+    ? `<button class="btn second-toggle ${secMode?"arm":""}" data-arm="${field}">${
+        secMode ? "pick 2nd\u2026" : (sec ? "2nd: "+sec : "+ 2nd")}</button>`
+       + (sec ? `<button class="btn clr2" data-clr="${field}" title="remove second value">\u00d7</button>` : "")
+    : "";
+  return `<div class="frow ${disabled?"dis":""} ${secMode?"arming":""}">
+      <span class="flabel">${flabel}</span>${btns}
+      <span class="secwrap">${secBtn}</span>
+    </div>`;
+}
+function renderDock(a){
+  const turnDis = !a.mode_medium || a.mode_medium==="cannot_rate";
+  const purpDis = turnDis;
+  $("dockInner").innerHTML=`
+    ${facetRow("mode_medium", MEDIUM, a, false)}
+    ${facetRow("mode_turn", TURN, a, turnDis)}
+    ${facetRow("field_purpose", PURPOSE, a, purpDis)}
+    <div class="dockbar">
+      <button class="btn" id="prevBtn" ${idx===0?"disabled":""}>\u2190 Prev</button>
+      <span class="status">
+        <input class="jump" id="jump" type="number" min="1" max="${records.length}" value="${idx+1}"> / ${records.length}
+        &nbsp;\u00b7&nbsp; ${countDone()} done &nbsp;\u00b7&nbsp; ${countSecondary()} w/ 2nd
+        &nbsp;\u00b7&nbsp; <span id="saveStatus" class="saved">saved</span>
+      </span>
+      <span class="grow"></span>
+      <button class="btn primary" id="nextBtn" ${idx===records.length-1?"disabled":""}>Next \u2192</button>
+    </div>`;
+  $("dockInner").querySelectorAll(".choice").forEach(b=>{ b.onclick=()=>pickValue(b.dataset.field,b.dataset.val); });
+  $("dockInner").querySelectorAll(".second-toggle").forEach(b=>{ b.onclick=()=>armSecond(b.dataset.arm); });
+  $("dockInner").querySelectorAll(".clr2").forEach(b=>{ b.onclick=()=>clearSecond(b.dataset.clr); });
+  $("prevBtn").onclick=()=>go(idx-1);
+  $("nextBtn").onclick=()=>go(idx+1);
+  $("jump").onchange=(e)=>{const n=parseInt(e.target.value,10);if(n>=1&&n<=records.length)go(n-1);};
+}
+
+function setSaveStatus(t,danger){const el=$("saveStatus");if(el){el.textContent=t;el.style.color=danger?"var(--danger)":"";}}
+
+// Clicking a value button. If the facet is "armed" for a secondary, set the
+// secondary; otherwise set the primary (the fast, default path).
+function pickValue(field,value){
+  const r=records[idx], k=recordKey(r);
+  if(!ann[k])ann[k]={};
+  const a=ann[k];
+  if(secondArm===field){
+    // setting a secondary value
+    if(value===a[field]){ secondArm=null; render(); return; } // can't equal primary; ignore
+    if(a[field+"_2"]===value){ delete a[field+"_2"]; }        // toggle off
+    else { a[field+"_2"]=value; }
+    secondArm=null;
+  } else {
+    // setting (or toggling) the primary
+    if(a[field]===value){ delete a[field]; delete a[field+"_2"]; }
+    else { a[field]=value; if(a[field+"_2"]===value) delete a[field+"_2"]; }
+    if(field==="mode_medium"){
+      if(a.mode_medium==="cannot_rate"||!a.mode_medium){
+        delete a.mode_turn; delete a.mode_turn_2;
+        delete a.field_purpose; delete a.field_purpose_2;
+      }
+    }
+  }
+  scheduleSave(); render();
+}
+
+// Keyboard sets the PRIMARY only (secondary is a deliberate mouse action).
+function setField(field,value){
+  secondArm=null;
+  const r=records[idx], k=recordKey(r);
+  if(!ann[k])ann[k]={};
+  const a=ann[k];
+  a[field]=value;
+  if(a[field+"_2"]===value) delete a[field+"_2"];
+  if(field==="mode_medium"&&value==="cannot_rate"){
+    delete a.mode_turn; delete a.mode_turn_2; delete a.field_purpose; delete a.field_purpose_2;
+  }
+  scheduleSave(); render();
+}
+
+function armSecond(field){ secondArm = (secondArm===field?null:field); render(); }
+function clearSecond(field){ const a=ann[recordKey(records[idx])]; if(a){delete a[field+"_2"];} secondArm=null; scheduleSave(); render(); }
+function countSecondary(){ let c=0; records.forEach(r=>{const a=ann[recordKey(r)]; if(a&&(a.mode_medium_2||a.mode_turn_2||a.field_purpose_2))c++;}); return c; }
+
+function go(n){if(n<0||n>=records.length)return;secondArm=null;idx=n;scheduleSave();render();}
+function countDone(){let c=0;records.forEach(r=>{if(isDone(r))c++;});return c;}
+
+document.addEventListener("keydown",(e)=>{
+  if(!records.length)return;
+  if($("cbBackdrop").classList.contains("open"))return;
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const tag=(e.target.tagName||"").toLowerCase();
+  if(tag==="input"&&e.target.type==="number")return;
+  if(e.key==="ArrowRight"){e.preventDefault();go(idx+1);return;}
+  if(e.key==="ArrowLeft"){e.preventDefault();go(idx-1);return;}
+  const a=ann[recordKey(records[idx])]||{};
+  const key=e.key.length===1?e.key.toLowerCase():e.key;
+  for(const [v,,k] of MEDIUM) if(key===k){e.preventDefault();setField("mode_medium",v);return;}
+  if(a.mode_medium&&a.mode_medium!=="cannot_rate"){
+    for(const [v,,k] of TURN) if(key===k){e.preventDefault();setField("mode_turn",v);return;}
+    for(const [v,,k] of PURPOSE) if(key===k){e.preventDefault();setField("field_purpose",v);return;}
+  }
+});
+
+$("exportBtn").onclick=()=>{
+  const lines=records.map(r=>{const a=ann[recordKey(r)]||{};
+    return JSON.stringify({source_file:r.source_file,line_number:r.line_number,
+      target_index:r.target_index,id:r.id,
+      mode_medium:a.mode_medium??null, mode_medium_2:a.mode_medium_2??null,
+      mode_turn:a.mode_turn??null, mode_turn_2:a.mode_turn_2??null,
+      field_purpose:a.field_purpose??null, field_purpose_2:a.field_purpose_2??null});});
+  const blob=new Blob([lines.join("\n")+"\n"],{type:"application/jsonl"});
+  const u=URL.createObjectURL(blob);const a=document.createElement("a");
+  a.href=u;a.download=fileName.replace(/\.jsonl?$/i,"")+"_annotations.jsonl";a.click();URL.revokeObjectURL(u);};
+
+$("importBtn").onclick=()=>{if(!records.length){alert("Load the sample file first, then import its annotations.");return;}$("importInput").click();};
+$("importInput").onchange=async(e)=>{const f=e.target.files[0];if(!f)return;
+  const rows=parseJSONL(await f.text());let n=0;
+  const fields=["mode_medium","mode_medium_2","mode_turn","mode_turn_2","field_purpose","field_purpose_2"];
+  rows.forEach(row=>{const k=`${row.source_file}|${row.line_number}|${row.target_index}`;const o={};
+    fields.forEach(fld=>{ if(row[fld]) o[fld]=row[fld]; });
+    if(Object.keys(o).length){ann[k]=o;n++;}});
+  scheduleSave();render();alert(`Imported annotations for ${n} segments.`);};
+
+window.addEventListener("beforeunload",(e)=>{if(records.length&&countDone()>0){e.preventDefault();e.returnValue="";}});
+
+// ---- Codebook modal ----
+$("cbBody").textContent = CODEBOOK_TEXT;
+function openCB(){ $("cbBackdrop").classList.add("open"); }
+function closeCB(){ $("cbBackdrop").classList.remove("open"); }
+$("codebookBtn").onclick=openCB;
+$("cbClose").onclick=closeCB;
+$("cbBackdrop").addEventListener("click",(e)=>{ if(e.target===$("cbBackdrop")) closeCB(); });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape") closeCB(); });
+</script>
+</body>
+</html>
