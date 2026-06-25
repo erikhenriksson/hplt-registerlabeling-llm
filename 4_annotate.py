@@ -80,20 +80,24 @@ SYSTEM = (
 )
 
 CODEBOOK = """\
-This is register annotation in the corpus-linguistic tradition: identify the
-KIND of text a segment is — its situation and purpose of use — not its topic,
-quality, or correctness. Judge each segment by what it is as communication, not
-by whether it is well written, true, or on-topic.
+Identify the KIND of text each segment is — its situation and purpose of use —
+not its topic, quality, or correctness. Judge each segment by what it is as
+communication, not by whether it is well written, true, or on-topic.
 
 Label the TARGET segment on three dimensions.
 
-mode_medium (ALWAYS give a value):
-  written      — text composed as text.
-  transcribed  — clearly spoken first (speaker labels, transcripts, speeches).
-  cannot_rate  — not a self-standing piece of communication, even if well-formed:
-                 titles/headings, navigation, boilerplate, metadata, link/label
-                 lists, bare fragments, machine-generated filler, or text too
-                 garbled to stand on its own.
+mode_medium (ALWAYS give a value). Decide in this order:
+  STEP 1 — Is the segment a self-standing piece of communication, conveying a
+  message on its own? Apply this test even when the text is clean and
+  well-formed. If NOT self-standing, it is cannot_rate, regardless of how
+  polished it looks: titles, headings, section labels, navigation, menus,
+  link/label lists, boilerplate, metadata, captions, bare fragments,
+  machine-generated filler, or text too garbled to stand alone. Example:
+  "Chapter 3: Results" is cannot_rate — it is real text but on its own only
+  labels something else; it communicates nothing by itself.
+  STEP 2 — Only if it IS self-standing, choose:
+    written      — composed as text.
+    transcribed  — clearly spoken first (speaker labels, transcripts, speeches).
 
 mode_turn (set to null if mode_medium is cannot_rate):
   monologic — one author to a general audience (articles, guides, FAQs).
