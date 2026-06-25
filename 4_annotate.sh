@@ -6,7 +6,14 @@
 #SBATCH --time=03:00:00
 #SBATCH --job-name=register
 #SBATCH --output=slurm-%j.out
-#SBATCH --error=slurm-%j.err
+
+# --- self-submit + tail ---
+if [ -z "$SLURM_JOB_ID" ]; then
+    jid=$(sbatch --parsable "$0") || exit 1
+    echo "Submitted job $jid"
+    exec tail -F "slurm-${jid}.out"
+fi
+# --------------------------
 
 # --- edit these ---
 INPUT=sample.jsonl
