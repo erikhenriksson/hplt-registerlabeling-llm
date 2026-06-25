@@ -88,45 +88,56 @@ Label the TARGET segment on three dimensions.
 
 mode_medium (ALWAYS give a value). Decide in this order:
   STEP 1 — Is the segment a self-standing piece of communication, conveying a
-  message on its own? Apply this test even when the text is clean and
-  well-formed. If NOT self-standing, it is cannot_rate, regardless of how
-  polished it looks: titles, headings, section labels, navigation, menus,
-  link/label lists, boilerplate, metadata, captions, bare fragments,
-  machine-generated filler, or text too garbled to stand alone. Example:
-  "Chapter 3: Results" is cannot_rate — it is real text but on its own only
-  labels something else; it communicates nothing by itself.
-  STEP 2 — Only if it IS self-standing, choose:
-    written      — composed as text.
-    transcribed  — clearly spoken first (speaker labels, transcripts, speeches).
+  message on its own? If NOT, it is cannot_rate, however polished it looks:
+  titles, headings, labels, navigation, menus, link lists, boilerplate,
+  metadata, captions, dates/timestamps, bare fragments, or garbled text. A
+  bullet/list item is cannot_rate UNLESS it is itself a complete statement.
+  Test: read the item alone — if it does not convey a full message by itself,
+  it is cannot_rate. EXCEPTION: if it is a fragment only because a sentence was
+  split across segments, rate it as part of that sentence — this does NOT apply
+  to dates, headings, labels, or list items. If mode_medium is cannot_rate, set
+  the other five fields to null and stop.
+  STEP 2 — Only if self-standing, choose:
+    written      — composed as text to be read, even if casual, conversational,
+                   or spoken-like in tone (comments, posts, messages, emails).
+                   Informal or chatty style does NOT make it transcribed.
+    transcribed  — a record of words actually spoken aloud: transcripts,
+                   interviews, speeches, captions/subtitles, or text with
+                   speaker labels or turn markers.
 
-mode_turn (set to null if mode_medium is cannot_rate):
+mode_turn:
   monologic — one author to a general audience (articles, guides, FAQs).
   dialogic  — others can reply (forums, comments, social posts, chats, interviews).
 
-field_purpose (set to null if mode_medium is cannot_rate):
+field_purpose:
   explaining — how something IS or WORKS; concepts, definitions, mechanisms.
   supporting — backing a claim with evidence, reasons, sources, or experience.
-  recounting — relating specific events in sequence as having happened.
+  recounting — relating specific REAL events in sequence as having actually
+               happened (trip reports, incident writeups, true anecdotes).
   directing  — telling the reader how to do something, or what they should do.
   evaluating — reasoned assessment or argument where grounds are given.
   expressing — personal opinion, emotion, or stance as the point itself.
   promoting  — the author marketing their own product, service, or organization.
-  creating   — poetry, lyrics, scripture, or literary art as primary content.
+  creating   — literary or artistic text as primary content: poetry, lyrics,
+               scripture, fiction, and narrative prose presented as a crafted
+               or imaginative work. Narrative form alone is NOT recounting — if
+               it reads as a fictional/literary artifact, it is creating.
 
 Tie-breakers:
   - evaluating vs expressing: grounds given = evaluating; bare reaction = expressing.
   - explaining vs supporting: "how/what is X" = explaining; "why believe / evidence" = supporting.
-  - recounting vs explaining: a story of events = recounting; a citation/catalog mention = explaining.
+  - recounting vs creating: events offered as really happened = recounting;
+    narrative presented as literary/fiction = creating.
+  - recounting vs expressing: events related for their own sake = recounting;
+    events used as backstory for a present feeling, opinion, or plea = expressing.
 
 Primary and optional secondary value:
-  - The primary fields (mode_medium, mode_turn, field_purpose) carry the value
-    that fits best. Most segments have one main value per dimension.
+  - The primary fields carry the value that fits best. Most segments have one
+    main value per dimension.
   - The secondary fields (mode_medium_2, mode_turn_2, field_purpose_2) are
-    OPTIONAL and should stay rare. Set a secondary only when the segment truly
-    does two things on that dimension and tagging only one would misrepresent
-    it. Otherwise set the secondary field to null.
-  - The three dimensions are independent: a segment may have a secondary on one
-    dimension and not the others.
+    OPTIONAL and rare. Set one only when the segment truly does two things on
+    that dimension. Otherwise set the secondary to null. The three dimensions
+    are independent.
 
 Output a JSON object with exactly these keys:
   mode_medium, mode_turn, field_purpose,
